@@ -1,4 +1,4 @@
-// background.js
+"""// background.js
 
 let offscreenWindow;
 
@@ -8,7 +8,7 @@ const breakDuration = 5 * 60; // 5 minutes
 let currentTimer = pomodoroDuration;
 let isRunning = false;
 let timerState = 'work'; // 'work', 'break', 'done'
-let setsCompleted = 0;
+let currentSet = 0;
 let totalSets = 4; // Default value
 let timerIntervalId;
 
@@ -18,7 +18,7 @@ async function saveTimerState() {
     currentTimer,
     isRunning,
     timerState,
-    setsCompleted,
+    currentSet,
     totalSets,
   });
 }
@@ -29,13 +29,13 @@ async function loadTimerState() {
     'currentTimer',
     'isRunning',
     'timerState',
-    'setsCompleted',
+    'currentSet',
     'totalSets',
   ]);
   currentTimer = result.currentTimer !== undefined ? result.currentTimer : pomodoroDuration;
   isRunning = result.isRunning || false;
   timerState = result.timerState || 'work';
-  setsCompleted = result.setsCompleted || 0;
+  currentSet = result.currentSet || 0;
   totalSets = result.totalSets || 4;
 }
 
@@ -49,7 +49,7 @@ function sendTimerStateToPopup() {
     currentTimer,
     isRunning,
     timerState,
-    setsCompleted,
+    currentSet,
     totalSets,
   });
 }
@@ -58,11 +58,18 @@ function sendTimerStateToPopup() {
 function startTimer() {
   if (isRunning) return;
   isRunning = true;
-  saveTimerState();
+  // Use a small delay to ensure the alarm doesn't fire immediately
+  // if currentTimer is very short.
+  const delayInMinutes = Math.max(currentTimer / 60, 0.01);
   chrome.alarms.create('pomodoroTimer', {
-    delayInMinutes: currentTimer / 60,
+    delayInMinutes: delayInMinutes,
   });
-  // Start real-time updates if popup is open
+  
+  // Clear any existing interval before creating a new one
+  if (timerIntervalId) {
+    clearInterval(timerIntervalId);
+  }
+
   timerIntervalId = setInterval(() => {
     currentTimer--;
     sendTimerStateToPopup();
@@ -70,14 +77,15 @@ function startTimer() {
       clearInterval(timerIntervalId);
     }
   }, 1000);
+  saveTimerState();
 }
 
 // Function to pause the timer
 function pauseTimer() {
   isRunning = false;
-  saveTimerState();
   chrome.alarms.clear('pomodoroTimer');
   clearInterval(timerIntervalId);
+  saveTimerState();
   sendTimerStateToPopup();
 }
 
@@ -86,7 +94,7 @@ function resetTimer() {
   pauseTimer();
   timerState = 'work';
   currentTimer = pomodoroDuration;
-  setsCompleted = 0;
+  currentSet = 0;
   saveTimerState();
   sendTimerStateToPopup();
 }
@@ -98,10 +106,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     chrome.runtime.sendMessage({ action: 'playAlarmInOffscreen' });
 
     if (timerState === 'work') {
-      setsCompleted++;
-      if (setsCompleted >= totalSets) {
+      // Finished a work session
+      currentSet++;
+      if (currentSet >= totalSets) {
+        // Final work session completed
         timerState = 'done';
-        pauseTimer();
         chrome.notifications.create({
           type: 'basic',
           iconUrl: 'images/icon_clock48.png',
@@ -109,7 +118,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
           message: 'You have finished all your Pomodoro sets.',
           priority: 2,
         });
+        // We call pauseTimer here which handles clearing intervals and alarms
+        pauseTimer();
       } else {
+        // Start a break
         timerState = 'break';
         currentTimer = breakDuration;
         chrome.notifications.create({
@@ -122,6 +134,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         startTimer();
       }
     } else if (timerState === 'break') {
+      // Finished a break session, start next work session
       timerState = 'work';
       currentTimer = pomodoroDuration;
       chrome.notifications.create({
@@ -145,12 +158,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       currentTimer,
       isRunning,
       timerState,
-      setsCompleted,
+      currentSet,
       totalSets,
     });
+    return true; // Indicates we will send a response asynchronously
   } else if (request.action === 'startTimer') {
-    if (request.totalSets) {
+    if (request.totalSets && !isRunning) {
       totalSets = request.totalSets;
+      // If starting from a fresh state, ensure sets are reset
+      if (timerState === 'done' || currentSet === 0) {
+         resetTimer();
+         totalSets = request.totalSets;
+      }
     }
     startTimer();
   } else if (request.action === 'pauseTimer') {
@@ -161,10 +180,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     totalSets = request.sets;
     if (!isRunning) {
       currentTimer = pomodoroDuration;
-      setsCompleted = 0;
+      currentSet = 0;
       timerState = 'work';
     }
     saveTimerState();
+    sendTimerStateToPopup();
   }
 });
 
@@ -178,3 +198,4 @@ async function setupOffscreenDocument(path) {
     justification: 'Playing alarm sound for Pomodoro timer',
   });
 }
+""

@@ -18,16 +18,16 @@ function formatTime(seconds) {
   return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
-function updateTimerDisplay(currentTimer, isRunning, timerState, setsCompleted, totalSets) {
+function updateTimerDisplay(currentTimer, isRunning, timerState, currentSet, totalSets) {
   timerDisplay.textContent = formatTime(currentTimer);
   pomodoroSetsInput.value = totalSets;
 
   switch (timerState) {
     case 'work':
-      timerStateDisplay.textContent = `Work (${setsCompleted + 1}/${totalSets})`;
+      timerStateDisplay.textContent = `Work (${currentSet + 1}/${totalSets})`;
       break;
     case 'break':
-      timerStateDisplay.textContent = `Break (${setsCompleted}/${totalSets})`;
+      timerStateDisplay.textContent = `Break (${currentSet}/${totalSets})`;
       break;
     case 'done':
       timerStateDisplay.textContent = 'Done!';
@@ -48,7 +48,7 @@ function getInitialTimerState() {
       return;
     }
     if (response) {
-      updateTimerDisplay(response.currentTimer, response.isRunning, response.timerState, response.setsCompleted, response.totalSets);
+      updateTimerDisplay(response.currentTimer, response.isRunning, response.timerState, response.currentSet, response.totalSets);
     }
   });
 }
@@ -144,7 +144,7 @@ newTodoInput.addEventListener('keypress', (event) => {
 // Listen for timer updates from background.js
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'updateTimerDisplay') {
-    updateTimerDisplay(request.currentTimer, request.isRunning, request.timerState, request.setsCompleted, request.totalSets);
+    updateTimerDisplay(request.currentTimer, request.isRunning, request.timerState, request.currentSet, request.totalSets);
   }
 });
 
