@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>PomodoTo</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <div class="pomodoro-section">
+      <h2>Pomodoro Timer</h2>
+      <div id="timer-state-display"></div>
+      <div class="timer-display" id="timer-display">25:00</div>
+      <div class="controls">
+        <button id="start-timer">Start</button>
+        <button id="pause-timer">Pause</button>
+        <button id="reset-timer">Reset</button>
+      </div>
+      <div class="settings">
+        <label for="pomodoro-sets">Pomodoro Sets:</label>
+        <input type="number" id="pomodoro-sets" value="4" min="1" max="8">
+      </div>
+    </div>
+
+    <div class="todo-section">
+      <h2>Todo List</h2>
+      <input type="text" id="new-todo" placeholder="Add a new todo...">
+      <button id="add-todo">Add</button>
+      <ul id="todo-list"></ul>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
