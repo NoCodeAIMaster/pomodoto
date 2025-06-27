@@ -51,6 +51,12 @@ function sendTimerStateToPopup() {
     timerState,
     currentSet,
     totalSets,
+  }).catch(error => {
+    if (error.message.includes('Could not establish connection')) {
+      // Popup is not open, this is expected.
+    } else {
+      console.error("Error sending message to popup:", error);
+    }
   });
 }
 
@@ -153,39 +159,53 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 // Message listener from popup.js
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'getTimerState') {
-    sendResponse({
-      currentTimer,
-      isRunning,
-      timerState,
-      currentSet,
-      totalSets,
-    });
-    return true; // Indicates we will send a response asynchronously
-  } else if (request.action === 'startTimer') {
-    if (request.totalSets && !isRunning) {
-      totalSets = request.totalSets;
-      // If starting from a fresh state, ensure sets are reset
-      if (timerState === 'done' || currentSet === 0) {
-         resetTimer();
-         totalSets = request.totalSets;
+  console.log("Message received in background:", request.action);
+  switch (request.action) {
+    case 'getTimerState':
+      sendResponse({
+        currentTimer,
+        isRunning,
+        timerState,
+        currentSet,
+        totalSets,
+      });
+      break;
+    case 'startTimer':
+      if (request.totalSets && !isRunning) {
+        totalSets = request.totalSets;
+        if (timerState === 'done' || currentSet === 0) {
+           resetTimer();
+           totalSets = request.totalSets;
+        }
       }
-    }
-    startTimer();
-  } else if (request.action === 'pauseTimer') {
-    pauseTimer();
-  } else if (request.action === 'resetTimer') {
-    resetTimer();
-  } else if (request.action === 'setTotalPomodoroSets') {
-    totalSets = request.sets;
-    if (!isRunning) {
-      currentTimer = pomodoroDuration;
-      currentSet = 0;
-      timerState = 'work';
-    }
-    saveTimerState();
-    sendTimerStateToPopup();
+      startTimer();
+      break;
+    case 'pauseTimer':
+      pauseTimer();
+      break;
+    case 'resetTimer':
+      resetTimer();
+      break;
+    case 'setTotalPomodoroSets':
+      totalSets = request.sets;
+      if (!isRunning) {
+        currentTimer = pomodoroDuration;
+        currentSet = 0;
+        timerState = 'work';
+      }
+      saveTimerState();
+      sendTimerStateToPopup();
+      break;
+    case 'playAlarmInOffscreen':
+        // This message is for the offscreen document, not the background script.
+        // We can ignore it here.
+        break;
+    default:
+      console.warn("Unknown action received:", request.action);
   }
+  // Return true to indicate that we might send a response asynchronously.
+  // This is important for preventing the message port from closing prematurely.
+  return true;
 });
 
 // Offscreen document setup for alarm sound

@@ -110,20 +110,28 @@ function updateTodosInStorage() {
 
 startButton.addEventListener('click', () => {
   const totalSets = parseInt(pomodoroSetsInput.value);
-  chrome.runtime.sendMessage({ action: 'startTimer', totalSets: totalSets });
+  chrome.runtime.sendMessage({ action: 'startTimer', totalSets: totalSets }).catch(error => {
+    console.error("Error sending startTimer message:", error);
+  });
 });
 
 pauseButton.addEventListener('click', () => {
-  chrome.runtime.sendMessage({ action: 'pauseTimer' });
+  chrome.runtime.sendMessage({ action: 'pauseTimer' }).catch(error => {
+    console.error("Error sending pauseTimer message:", error);
+  });
 });
 
 resetButton.addEventListener('click', () => {
-  chrome.runtime.sendMessage({ action: 'resetTimer' });
+  chrome.runtime.sendMessage({ action: 'resetTimer' }).catch(error => {
+    console.error("Error sending resetTimer message:", error);
+  });
 });
 
 pomodoroSetsInput.addEventListener('change', (event) => {
   const sets = parseInt(event.target.value);
-  chrome.runtime.sendMessage({ action: 'setTotalPomodoroSets', sets: sets });
+  chrome.runtime.sendMessage({ action: 'setTotalPomodoroSets', sets: sets }).catch(error => {
+    console.error("Error sending setTotalPomodoroSets message:", error);
+  });
 });
 
 addTodoButton.addEventListener('click', () => {
