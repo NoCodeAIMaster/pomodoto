@@ -1,16 +1,19 @@
-"""// background.js
+// background.js
 
 let offscreenWindow;
 
+// Debug flag for shorter durations
+const DEBUG = false; // Set to true for 25s work / 5s break
+
 // Timer state variables
-const pomodoroDuration = 25 * 60; // 25 minutes
-const breakDuration = 5 * 60; // 5 minutes
+const pomodoroDuration = DEBUG ? 25 : 25 * 60; // 25 minutes or 25 seconds
+const breakDuration = DEBUG ? 5 : 5 * 60; // 5 minutes or 5 seconds
 let currentTimer = pomodoroDuration;
 let isRunning = false;
 let timerState = 'work'; // 'work', 'break', 'done'
 let currentSet = 0;
 let totalSets = 4; // Default value
-let timerIntervalId;
+let timerIntervalId; // To store setInterval ID for real-time updates
 
 // Function to save timer state to local storage
 async function saveTimerState() {
@@ -60,36 +63,82 @@ function sendTimerStateToPopup() {
   });
 }
 
-// Function to start the timer
-function startTimer() {
-  if (isRunning) return;
-  isRunning = true;
-  // Use a small delay to ensure the alarm doesn't fire immediately
-  // if currentTimer is very short.
-  const delayInMinutes = Math.max(currentTimer / 60, 0.01);
-  chrome.alarms.create('pomodoroTimer', {
-    delayInMinutes: delayInMinutes,
-  });
-  
-  // Clear any existing interval before creating a new one
+// Function to play alarm sound
+async function playAlarm() {
+  await setupOffscreenDocument('offscreen.html');
+  chrome.runtime.sendMessage({ action: 'playAlarmInOffscreen' });
+}
+
+// Function to handle timer tick
+function tick() {
+  currentTimer--;
+  sendTimerStateToPopup();
+
+  if (currentTimer <= 0) {
+    clearInterval(timerIntervalId);
+    playAlarm();
+
+    if (timerState === 'work') {
+      // Work session ended, start break
+      startBreak();
+    } else if (timerState === 'break') {
+      // Break session ended, check for next work session or finish
+      currentSet++; // Increment set after break
+      if (currentSet >= totalSets) {
+        finishAll();
+      } else {
+        startWork();
+      }
+    }
+  }
+  saveTimerState();
+}
+
+// Function to start a work session
+function startWork() {
+  timerState = 'work';
+  currentTimer = pomodoroDuration;
   if (timerIntervalId) {
     clearInterval(timerIntervalId);
   }
+  timerIntervalId = setInterval(tick, 1000);
+  isRunning = true;
+  sendTimerStateToPopup();
+  saveTimerState();
+}
 
-  timerIntervalId = setInterval(() => {
-    currentTimer--;
-    sendTimerStateToPopup();
-    if (currentTimer <= 0) {
-      clearInterval(timerIntervalId);
-    }
-  }, 1000);
+// Function to start a break session
+function startBreak() {
+  timerState = 'break';
+  currentTimer = breakDuration;
+  if (timerIntervalId) {
+    clearInterval(timerIntervalId);
+  }
+  timerIntervalId = setInterval(tick, 1000);
+  isRunning = true;
+  sendTimerStateToPopup();
+  saveTimerState();
+}
+
+// Function to finish all sets
+function finishAll() {
+  timerState = 'done';
+  isRunning = false;
+  clearInterval(timerIntervalId);
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: 'images/icon_clock48.png',
+    title: 'All Sets Complete!',
+    message: 'You have finished all your Pomodoro sets.',
+    priority: 2,
+  });
+  sendTimerStateToPopup();
   saveTimerState();
 }
 
 // Function to pause the timer
 function pauseTimer() {
   isRunning = false;
-  chrome.alarms.clear('pomodoroTimer');
   clearInterval(timerIntervalId);
   saveTimerState();
   sendTimerStateToPopup();
@@ -105,58 +154,6 @@ function resetTimer() {
   sendTimerStateToPopup();
 }
 
-// Alarm listener for session transitions
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === 'pomodoroTimer') {
-    await setupOffscreenDocument('offscreen.html');
-    chrome.runtime.sendMessage({ action: 'playAlarmInOffscreen' });
-
-    if (timerState === 'work') {
-      // Finished a work session
-      currentSet++;
-      if (currentSet >= totalSets) {
-        // Final work session completed
-        timerState = 'done';
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'images/icon_clock48.png',
-          title: 'All Sets Complete!',
-          message: 'You have finished all your Pomodoro sets.',
-          priority: 2,
-        });
-        // We call pauseTimer here which handles clearing intervals and alarms
-        pauseTimer();
-      } else {
-        // Start a break
-        timerState = 'break';
-        currentTimer = breakDuration;
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'images/icon_clock48.png',
-          title: 'Work Session Complete!',
-          message: 'Time for a break.',
-          priority: 2,
-        });
-        startTimer();
-      }
-    } else if (timerState === 'break') {
-      // Finished a break session, start next work session
-      timerState = 'work';
-      currentTimer = pomodoroDuration;
-      chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'images/icon_clock48.png',
-        title: 'Break Complete!',
-        message: 'Starting next work session.',
-        priority: 2,
-      });
-      startTimer();
-    }
-    saveTimerState();
-    sendTimerStateToPopup();
-  }
-});
-
 // Message listener from popup.js
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log("Message received in background:", request.action);
@@ -169,16 +166,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         currentSet,
         totalSets,
       });
-      break;
+      return true; // Indicates we will send a response asynchronously
     case 'startTimer':
-      if (request.totalSets && !isRunning) {
-        totalSets = request.totalSets;
-        if (timerState === 'done' || currentSet === 0) {
-           resetTimer();
-           totalSets = request.totalSets;
+      if (!isRunning) {
+        if (request.totalSets) {
+          totalSets = request.totalSets;
         }
+        // If starting from a fresh state or after 'done', reset and start work
+        if (timerState === 'done' || currentSet === 0) {
+           resetTimer(); // This will set timerState to 'work' and currentSet to 0
+           totalSets = request.totalSets; // Ensure totalSets is updated after reset
+        }
+        startWork();
       }
-      startTimer();
       break;
     case 'pauseTimer':
       pauseTimer();
@@ -203,9 +203,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     default:
       console.warn("Unknown action received:", request.action);
   }
-  // Return true to indicate that we might send a response asynchronously.
-  // This is important for preventing the message port from closing prematurely.
-  return true;
+  return false; // No asynchronous response for other messages
 });
 
 // Offscreen document setup for alarm sound
@@ -218,4 +216,3 @@ async function setupOffscreenDocument(path) {
     justification: 'Playing alarm sound for Pomodoro timer',
   });
 }
-""
